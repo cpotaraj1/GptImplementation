@@ -6,6 +6,9 @@ Basics of GPT model to create your own generating model
 
 If you don't have an NVIDIA GPU, then the `device` parameter will default to `'cpu'` since `device = 'cuda' if torch.cuda.is_available() else 'cpu'`. If device is defaulting to `'cpu'` that is fine, you will just experience slower runtimes.
 
+Tensorboard is also enabled and keeps track of training  loss and validation loss over the epochs> Make sure you the path to the runs is defined in gpt-v1.py
+`tensorboard --logdir <place where you will have the logs>`
+
 ## All the links you should need are in this repo. I will add detailed explanations as questions and issues are posted.
 
 ## Visual Studio 2022 (for lzma compression algo) - https://visualstudio.microsoft.com/downloads/

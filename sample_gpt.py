@@ -6,38 +6,31 @@ import random
 import pickle
 import argparse
 
-from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter('runs/sample_gpt_run1')
-
-
 parser = argparse.ArgumentParser(description='This is a demonstration program')
 
 # Here we add an argument to the parser, specifying the expected type, a help message, etc.
-# parser.add_argument('-batch_size', type=str, required=True, help='Please provide a batch_size')
+parser.add_argument('-batch_size', type=str, required=True, help='Please provide a batch_size')
 
-# args = parser.parse_args()
+args = parser.parse_args()
 
 # Now we can use the argument value in our program.
-# print(f'batch size: {args.batch_size}')
+print(f'batch size: {args.batch_size}')
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# batch_size = args.batch_size # to use the batch_size cmd arg -> python file_name.py -batch_size 32
-batch_size = 32
-block_size = 64
-max_iters = 20000
-learning_rate = 1e-4
-eval_iters = 10
+batch_size = int(args.batch_size)
+block_size = 128
+max_iters = 200
+learning_rate = 3e-4
+eval_iters = 100
 n_embd = 384
-n_head = 16
-n_layer = 64
+n_head = 1
+n_layer = 1
 dropout = 0.2
 
-# Define a variable to keep track of the best validation loss
-best_val_loss = float('inf')
-
+print(device)
 
 chars = ""
-with open("complete_data.txt", 'r', encoding='utf-8') as f:
+with open("vocab.txt", 'r', encoding='utf-8') as f:
         text = f.read()
         chars = sorted(list(set(text)))
         
@@ -48,35 +41,8 @@ int_to_string = { i:ch for i,ch in enumerate(chars) }
 encode = lambda s: [string_to_int[c] for c in s]
 decode = lambda l: ''.join([int_to_string[i] for i in l])
 
-# memory map for using small snippets of text from a single file of any size
-def get_random_chunk(split):
-    filename = "train.txt" if split == 'train' else "val.txt"
-    with open(filename, 'rb') as f:
-        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-            # Determine the file size and a random position to start reading
-            file_size = len(mm)
-            # import pdb; pdb.set_trace()
-            start_pos = random.randint(0, (file_size) - block_size*batch_size)
 
-            # Seek to the random position and read the block of text
-            mm.seek(start_pos)
-            block = mm.read(block_size*batch_size-1)
 
-            # Decode the block to a string, ignoring any invalid byte sequences
-            decoded_block = block.decode('utf-8', errors='ignore').replace('\r', '')
-            
-            # Train and test splits
-            data = torch.tensor(encode(decoded_block), dtype=torch.long)
-            
-    return data
-
-def get_batch(split):
-    data = get_random_chunk(split)
-    ix = torch.randint(len(data) - block_size, (batch_size,))
-    x = torch.stack([data[i:i+block_size] for i in ix])
-    y = torch.stack([data[i+1:i+block_size+1] for i in ix])
-    x, y = x.to(device), y.to(device)
-    return x, y
 
 class Head(nn.Module):
     """ one head of self-attention """
@@ -106,6 +72,9 @@ class Head(nn.Module):
         out = wei @ v # (B, T, T) @ (B, T, hs) -> (B, T, hs)
         return out
 
+# [1, 0, 0]
+# [1, 0.6, 0]
+# [1, 0.6, 0.4]
 class MultiHeadAttention(nn.Module):
     """ multiple heads of self-attention in parallel """
 
@@ -176,6 +145,7 @@ class GPTLanguageModel(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, index, targets=None):
+        print(index.shape)
         B, T = index.shape
         
         
@@ -214,63 +184,32 @@ class GPTLanguageModel(nn.Module):
             index = torch.cat((index, index_next), dim=1) # (B, T+1)
         return index
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
 model = GPTLanguageModel(vocab_size)
-print("Number of trainable parameters: ", count_parameters(model))
-
-# writer.add_graph(model)
-
-# print('loading model parameters...')
-# with open('model-01.pkl', 'rb') as f:
-#     model = pickle.load(f)
-# print('loaded successfully!')
+print('loading model parameters...')
+with open('model-01.pkl', 'rb') as f:
+    model = pickle.load(f)
+print('loaded successfully!')
 m = model.to(device)
 
-@torch.no_grad()
-def estimate_loss():
-    out = {}
-    model.eval()
-    for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters)
-        for k in range(eval_iters):
-            X, Y = get_batch(split)
-            logits, loss = model(X, Y)
-            losses[k] = loss.item()
-        out[split] = losses.mean()
-    model.train()
-    return out
+def find_sex():
+    sex = input("Are you male or female?")
+    if sex == "male":
+        prefix = "He: "
+        return prefix
+    elif sex == "female":
+        prefix = "She"
+        return prefix
+    else:
+        return find_sex()
 
-# create a PyTorch optimizer
-optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
-for iter in range(max_iters):
-    # print(iter)
-    if iter % eval_iters == 0:
-        losses = estimate_loss()
-        writer.add_scalar('Training loss', losses['train'], iter)
-        writer.add_scalar('Validation loss', losses['val'], iter)
-        print(f"Epoch: {iter}, train loss: {losses['train']:.3f}, val loss: {losses['val']:.3f}")
-        if losses['train'] < best_val_loss:
-            with open(f'model-best.pkl', 'wb') as f:
-                pickle.dump(model, f)
-            best_val_loss = losses['train']
-    # sample a batch of data
-    xb, yb = get_batch('train')
+prefix = find_sex()
 
-    # evaluate the loss
-    logits, loss = model.forward(xb, yb)
-    optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    optimizer.step()
-print(loss.item())
-
-with open('model-final.pkl', 'wb') as f:
-    pickle.dump(model, f)
-print('model saved')
-
-prompt = 'Hello! Can you see me?'
-context = torch.tensor(encode(prompt), dtype=torch.long, device=device)
-generated_chars = decode(m.generate(context.unsqueeze(0), max_new_tokens=100)[0].tolist())
-print(generated_chars)
+print("Lets begin!")
+while True:
+    
+    print("You: \n")
+    prompt = f"{prefix}: " + input()
+    context = torch.tensor(encode(prompt), dtype=torch.long, device=device)
+    generated_chars = decode(m.generate(context.unsqueeze(0), max_new_tokens=150)[0].tolist())
+    print(f'Me:\n{generated_chars}')
